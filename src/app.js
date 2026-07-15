@@ -34,7 +34,7 @@ async function getCryptoKey(password, saltBytes) {
 // データの暗号化 (戻り値: { ciphertext: base64, iv: base64, salt: base64 } のオブジェクト)
 async function encryptText(plainText) {
   if (!plainText) return "";
-  const password = sessionStorage.getItem('tensguru_decrypt_password');
+  const password = window.tensguruPassword || sessionStorage.getItem('tensguru_decrypt_password');
   if (!password) throw new Error("No password found in session");
 
   const enc = new TextEncoder();
@@ -58,10 +58,11 @@ async function encryptText(plainText) {
 // データの復号
 async function decryptText(encryptedJson) {
   if (!encryptedJson) return "";
-  const password = sessionStorage.getItem('tensguru_decrypt_password');
-  if (!password) throw new Error("No password found in session");
 
   try {
+    const password = window.tensguruPassword || sessionStorage.getItem('tensguru_decrypt_password');
+    if (!password) throw new Error("No password found in session");
+
     const data = JSON.parse(encryptedJson);
     if (!data.ciphertext || !data.iv || !data.salt) return encryptedJson;
 

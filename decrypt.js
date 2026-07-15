@@ -83,7 +83,8 @@ async function decryptAndRun(password, isAuto = false) {
     const dec = new TextDecoder();
     const appData = JSON.parse(dec.decode(decrypted));
 
-    // 復号成功後、セッションに記憶
+    // 復号成功後、セッションとメモリに記憶
+    window.tensguruPassword = password;
     sessionStorage.setItem('tensguru_decrypt_password', password);
 
     const overlay = document.getElementById('password-screen');
