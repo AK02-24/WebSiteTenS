@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <!-- 検索エンジン除外設定 (Noindex, Nofollow) -->
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TenSguru</title>
+  <!-- Google Fonts: Outfit (シンプルで美しいモダンサンセリフ) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ========================================================
+       2. メインアプリケーションコンテナ
+       ======================================================== -->
+  <div id="app-container" class="app-layout">
+    <!-- ヘッダー -->
+    <header class="main-header">
+      <div class="header-left">
+        <!-- ハンバーガーメニューボタン -->
+        <button id="menu-btn" class="icon-btn hamburger-btn" aria-label="メニューを開く" onclick="toggleSidebar(true)">
+          <span class="hamburger-line"></span>
+          <span class="hamburger-line"></span>
+          <span class="hamburger-line"></span>
+        </button>
+      </div>
+      <div class="header-center">
+        <h1 class="logo-text">TenSguru</h1>
+      </div>
+      <div class="header-right">
+        <!-- 新規投稿ボタン -->
+        <button id="new-post-btn" class="btn btn-dark" onclick="openPostModal()">
+          <svg class="icon-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          <span>投稿する</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- メインコンテンツ領域 (記事一覧) -->
+    <main class="main-content">
+      <div class="container">
+        <!-- 記事縦スクロールフィード -->
+        <div id="articles-list" class="articles-feed">
+          <!-- JSで動的に記事カードが生成されます -->
+        </div>
+        <div id="empty-state" class="empty-state hidden">
+          <p>まだ記事が投稿されていません。右上の「投稿する」ボタンから最初の記事を作成しましょう！</p>
+        </div>
+      </div>
+    </main>
+
+    <!-- ========================================================
+         3. スライドインサイドバー (左側)
+         ======================================================== -->
+    <div id="sidebar-overlay" class="sidebar-backdrop hidden" onclick="toggleSidebar(false)"></div>
+    <aside id="sidebar" class="app-sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">Menu & Calendar</span>
+        <button class="icon-btn close-btn" onclick="toggleSidebar(false)" aria-label="メニューを閉じる">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="sidebar-body">
+        <!-- カレンダーセクション -->
+        <section class="calendar-section">
+          <div class="calendar-header">
+            <button class="icon-btn" onclick="prevMonth()" aria-label="前月">
+              <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+            </button>
+            <span id="calendar-month-year" class="calendar-title">2026年 7月</span>
+            <button class="icon-btn" onclick="nextMonth()" aria-label="次月">
+              <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </button>
+          </div>
+          
+          <div class="calendar-weekdays">
+            <div>日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div>土</div>
+          </div>
+          <div id="calendar-grid" class="calendar-days">
+            <!-- JSで動的にカレンダーの日付を埋めます -->
+          </div>
+        </section>
+
+        <!-- 予定作成フォーム (日付選択時に表示) -->
+        <section id="event-editor" class="event-editor-section hidden">
+          <div class="section-title-container">
+            <h3 id="selected-date-label" class="section-subtitle">2026年07月15日の予定</h3>
+            <button class="text-link-btn" onclick="closeEventEditor()">閉じる</button>
+          </div>
+          
+          <div id="current-day-events" class="day-events-list">
+            <!-- 選択された日の登録済み予定一覧 -->
+          </div>
+
+          <form id="event-form" onsubmit="event.preventDefault(); addEvent();" class="event-input-form">
+            <div class="event-form-grid">
+              <div class="input-wrapper">
+                <label for="event-time" class="field-label">時間</label>
+                <input type="time" id="event-time" required>
+              </div>
+              <div class="input-wrapper">
+                <label for="event-title" class="field-label">予定</label>
+                <input type="text" id="event-title" placeholder="予定を入力" required>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-dark btn-sm full-width">予定を追加</button>
+          </form>
+        </section>
+
+        <!-- 予定確認セクション (横スクロールスライダー) -->
+        <section class="schedule-checker-section">
+          <h3 class="section-title">予定確認</h3>
+          <div class="slider-container">
+            <div id="schedule-slider" class="schedule-slider-track">
+              <!-- JSで予定が入っている日のカードのみ横並びで表示 -->
+            </div>
+            <div id="slider-empty-state" class="slider-empty hidden">
+              <p>登録されている予定はありません。カレンダーの日付を選択して追加してください。</p>
+            </div>
+          </div>
+        </section>
+      </div>
+      
+      <!-- サイドバー下部の設定 (ログアウト) -->
+      <div class="sidebar-footer">
+        <button class="text-link-btn flex-btn text-danger" onclick="logout()">
+          <svg class="footer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+          <span>ログアウト</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- ========================================================
+         4. 新規記事投稿モーダル (ポップアップ)
+         ======================================================== -->
+    <div id="post-modal" class="modal-backdrop hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2 class="modal-title">記事を掲載する</h2>
+          <button class="icon-btn" onclick="closePostModal()" aria-label="閉じる">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <form id="post-form" onsubmit="event.preventDefault(); submitPost();" class="modal-form">
+          
+          <!-- 画像ドラッグ＆ドロップ/アップロード領域 -->
+          <div class="image-upload-wrapper">
+            <label for="post-image" class="upload-area" id="upload-area">
+              <input type="file" id="post-image" accept="image/*" onchange="handleImageSelect(event)">
+              <div id="upload-placeholder" class="upload-placeholder">
+                <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                  <polyline points="21 15 16 10 5 21"></polyline>
+                </svg>
+                <p class="upload-text">画像を選択、またはドラッグ＆ドロップ</p>
+                <span class="upload-subtext">JPG, PNG, GIFなど</span>
+              </div>
+              <img id="image-preview" class="image-preview hidden" alt="アップロード画像プレビュー">
+            </label>
+            <button type="button" id="remove-image-btn" class="btn btn-light btn-xs remove-image hidden" onclick="resetImageSelection(event)">画像を削除</button>
+          </div>
+
+          <!-- タイトルと本文 -->
+          <div class="input-wrapper">
+            <label for="post-title" class="field-label">記事のタイトル</label>
+            <input type="text" id="post-title" placeholder="タイトルを入力" required>
+          </div>
+
+          <div class="input-wrapper">
+            <label for="post-content" class="field-label">言葉（本文）</label>
+            <textarea id="post-content" placeholder="画像の下に表示される言葉を入力してください..." rows="5" required></textarea>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="btn btn-light" onclick="closePostModal()">キャンセル</button>
+            <button type="submit" class="btn btn-dark">掲載する</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
