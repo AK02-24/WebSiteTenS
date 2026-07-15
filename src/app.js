@@ -4,7 +4,7 @@
 
 // Supabase 接続情報 (ビルド時に暗号化されるため安全)
 const SUPABASE_URL = "https://owkuqmdqqfyrrgqdfomh.supabase.co";
-const SUPABASE_KEY = "sb_publishable_1CbegrxjE0VAucDMhqTf5Q_xeXRPSbi";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im93a3VxbWRxcWZ5cnJncWRmb21oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxMjMwMTcsImV4cCI6MjA5OTY5OTAxN30.S7D8CvUryks0we2kVsQPXEkRb_6lCpWxdtS8TwIRqHY";
 const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
 // パスワードからAES-GCMキーを導出するヘルパー
