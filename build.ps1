@@ -139,3 +139,11 @@ $BuildHtml = $HtmlLines -join "`r`n"
 # Output
 [System.IO.File]::WriteAllText($out_html, $BuildHtml, [System.Text.Encoding]::UTF8)
 Write-Host "Successfully built! Output file created at: $out_html"
+
+# Copy supabase.js if exists
+$src_supabase = "$SrcDir\supabase.js"
+$out_supabase = "$CurrentDir\supabase.js"
+if (Test-Path $src_supabase) {
+    Copy-Item $src_supabase $out_supabase -Force
+    Write-Host "Copied supabase.js to output folder."
+}

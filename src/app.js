@@ -180,6 +180,8 @@ async function initData() {
       console.error("Failed to sync with Supabase, falling back to local storage:", err);
       showToast("クラウド同期失敗。ローカルデータを使用します。", "error");
     }
+  } else {
+    showToast("クラウド未接続。ローカル保存モードで動作します。", "error");
   }
 
   // フォールバック: ローカルストレージ
@@ -379,6 +381,8 @@ async function submitPost() {
       console.error("Failed to save to Supabase:", err);
       showToast("クラウド保存に失敗しました。ローカルにのみ保存します。", "error");
     }
+  } else {
+    showToast("クラウド未接続のため、ローカルにのみ保存します。", "error");
   }
 
   state.articles.unshift(newArticle); // 新しい順なので先頭に追加
@@ -412,6 +416,8 @@ async function deleteArticle(id) {
       console.error("Failed to delete from Supabase:", err);
       showToast("クラウドからの削除に失敗しました", "error");
     }
+  } else {
+    showToast("クラウド未接続のため、ローカルからのみ削除します。", "error");
   }
 
   state.articles = state.articles.filter(article => article.id !== id);
@@ -579,6 +585,8 @@ async function addEvent() {
       console.error("Failed to save schedule to Supabase:", err);
       showToast("クラウド保存に失敗しました。ローカルにのみ保存します。", "error");
     }
+  } else {
+    showToast("クラウド未接続のため、ローカルにのみ保存します。", "error");
   }
 
   state.schedules.push(newEvent);
@@ -612,6 +620,8 @@ async function deleteEvent(id, dateStr) {
       console.error("Failed to delete schedule from Supabase:", err);
       showToast("クラウドからの削除に失敗しました", "error");
     }
+  } else {
+    showToast("クラウド未接続のため、ローカルからのみ削除します。", "error");
   }
 
   state.schedules = state.schedules.filter(event => event.id !== id);
