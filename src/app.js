@@ -303,14 +303,51 @@ function renderArticles() {
 // 新しい記事の投稿処理
 let selectedImageBase64 = '';
 
-// 画像選択時の処理
-function handleImageSelect(event) {
+// 画像圧縮用ヘルパー関数 (Canvasを用いたリサイズ・JPEG圧縮)
+function compressImage(file, maxWidth = 1200, quality = 0.8) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (e) => {
+      const img = new Image();
+      img.src = e.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        // アスペクト比を維持しつつ最大横幅に縮小
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // 指定の画質でJPEG圧縮したBase64データを出力
+        const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+        resolve(compressedBase64);
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+}
+
+// 画像選択時の処理 (自動圧縮を適用)
+async function handleImageSelect(event) {
   const file = event.target.files[0];
   if (!file) return;
 
-  const reader = new FileReader();
-  reader.onload = function (e) {
-    selectedImageBase64 = e.target.result;
+  showToast("画像を最適化中...", "success");
+
+  try {
+    // 最大横幅1200px、画質80%で自動圧縮
+    selectedImageBase64 = await compressImage(file, 1200, 0.8);
 
     // UIのプレビュー更新
     const previewImg = document.getElementById('image-preview');
@@ -321,8 +358,28 @@ function handleImageSelect(event) {
     previewImg.classList.remove('hidden');
     placeholder.classList.add('hidden');
     removeBtn.classList.remove('hidden');
-  };
-  reader.readAsDataURL(file);
+    
+    showToast("画像の最適化が完了しました！", "success");
+  } catch (err) {
+    console.error("Image compression failed, falling back to original:", err);
+    showToast("圧縮に失敗しました。元のサイズで読み込みます。", "error");
+    
+    // 圧縮失敗時は元のファイルをそのまま読み込む
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      selectedImageBase64 = e.target.result;
+      
+      const previewImg = document.getElementById('image-preview');
+      const placeholder = document.getElementById('upload-placeholder');
+      const removeBtn = document.getElementById('remove-image-btn');
+
+      previewImg.src = selectedImageBase64;
+      previewImg.classList.remove('hidden');
+      placeholder.classList.add('hidden');
+      removeBtn.classList.remove('hidden');
+    };
+    reader.readAsDataURL(file);
+  }
 }
 
 // 選択した画像の初期化
