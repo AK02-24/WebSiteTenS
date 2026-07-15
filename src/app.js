@@ -99,10 +99,8 @@ const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
 // 1. パスワード認証機能
 // ========================================================
 
-// ページロード時の初期化と描画
-document.addEventListener('DOMContentLoaded', async () => {
-  await initData();
-});
+// ページロード時の初期化と描画 (動的読み込みのため即時実行)
+initData();
 
 // データベースまたはローカルストレージからデータを読み込む
 async function initData() {
