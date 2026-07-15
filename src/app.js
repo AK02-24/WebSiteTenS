@@ -2,6 +2,88 @@
    TenSguru Main Application Logic
    ======================================================== */
 
+// Supabase 接続情報 (ビルド時に暗号化されるため安全)
+const SUPABASE_URL = "https://owkuqmdqqfyrrgqdfomh.supabase.co";
+const SUPABASE_KEY = "sb_publishable_1CbegrxjE0VAucDMhqTf5Q_xeXRPSbi";
+const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
+// パスワードからAES-GCMキーを導出するヘルパー
+async function getCryptoKey(password, saltBytes) {
+  const enc = new TextEncoder();
+  const keyMaterial = await window.crypto.subtle.importKey(
+    "raw",
+    enc.encode(password),
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  );
+  return await window.crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: saltBytes,
+      iterations: 100000,
+      hash: "SHA-256"
+    },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+// データの暗号化 (戻り値: { ciphertext: base64, iv: base64, salt: base64 } のオブジェクト)
+async function encryptText(plainText) {
+  if (!plainText) return "";
+  const password = sessionStorage.getItem('tensguru_decrypt_password');
+  if (!password) throw new Error("No password found in session");
+
+  const enc = new TextEncoder();
+  const salt = window.crypto.getRandomValues(new Uint8Array(16));
+  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+
+  const key = await getCryptoKey(password, salt);
+  const encrypted = await window.crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: iv },
+    key,
+    enc.encode(plainText)
+  );
+
+  return JSON.stringify({
+    ciphertext: btoa(String.fromCharCode(...new Uint8Array(encrypted))),
+    iv: btoa(String.fromCharCode(...iv)),
+    salt: btoa(String.fromCharCode(...salt))
+  });
+}
+
+// データの復号
+async function decryptText(encryptedJson) {
+  if (!encryptedJson) return "";
+  const password = sessionStorage.getItem('tensguru_decrypt_password');
+  if (!password) throw new Error("No password found in session");
+
+  try {
+    const data = JSON.parse(encryptedJson);
+    if (!data.ciphertext || !data.iv || !data.salt) return encryptedJson;
+
+    const salt = new Uint8Array(atob(data.salt).split("").map(c => c.charCodeAt(0)));
+    const iv = new Uint8Array(atob(data.iv).split("").map(c => c.charCodeAt(0)));
+    const cipherText = new Uint8Array(atob(data.ciphertext).split("").map(c => c.charCodeAt(0)));
+
+    const key = await getCryptoKey(password, salt);
+    const decrypted = await window.crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: iv },
+      key,
+      cipherText
+    );
+
+    const dec = new TextDecoder();
+    return dec.decode(decrypted);
+  } catch (e) {
+    console.error("Failed to decrypt text, returning raw data:", e);
+    return encryptedJson;
+  }
+}
+
 // アプリケーション状態の管理
 const state = {
   currentDate: new Date(), // カレンダーで現在表示している月
@@ -18,78 +100,145 @@ const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
 // ========================================================
 
 // ページロード時の初期化と描画
-document.addEventListener('DOMContentLoaded', () => {
-  initData();
-  renderArticles();
-  renderCalendar();
-  renderScheduleSlider();
+document.addEventListener('DOMContentLoaded', async () => {
+  await initData();
 });
 
-// ローカルストレージからデータを読み込む
-function initData() {
-
+// データベースまたはローカルストレージからデータを読み込む
+async function initData() {
   // デフォルト画像データの作成 (SVGデータURI)
   const defaultImg1 = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:%23f8fafc;stop-opacity:1"/><stop offset="100%" style="stop-color:%23e2e8f0;stop-opacity:1"/></linearGradient></defs><rect width="800" height="500" fill="url(%23g)"/><circle cx="400" cy="250" r="120" fill="%230f172a" fill-opacity="0.03"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="'Outfit', sans-serif" font-size="32" font-weight="bold" fill="%230f172a">TenSguru</text></svg>`;
   const defaultImg2 = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:%23fffbeb;stop-opacity:1"/><stop offset="100%" style="stop-color:%23fef3c7;stop-opacity:1"/></linearGradient></defs><rect width="800" height="500" fill="url(%23g)"/><path d="M 200,300 Q 400,100 600,300" fill="none" stroke="%23d97706" stroke-width="2" stroke-dasharray="5 5"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="'Noto Sans JP', sans-serif" font-size="24" font-weight="500" fill="%23b45309">シンプルな余白とデザイン</text></svg>`;
 
-  // 記事データの初期化
-  const savedArticles = localStorage.getItem('tensguru_articles');
-  if (!savedArticles) {
-    const defaultArticles = [
-      {
-        id: 'default-1',
-        title: 'TenSguru へようこそ',
-        content: 'TenSguruは、プライベートな記事掲載とカレンダーによるスケジュール管理をひとつにまとめた、パスワード保護付きの個人用Webサイトです。\n\n右上の「投稿する」ボタンから、画像と言葉（テキスト）を自由に掲載できます。左上のメニューボタンからカレンダーを開き、日々の予定を追加することも可能です。\n\nすべてのデータは外部のサーバーではなく、ブラウザのローカルストレージ（localStorage）に保存されるため、あなたのプライバシーは安全に守られます。',
-        image: defaultImg1,
-        date: formatDateString(new Date())
-      },
-      {
-        id: 'default-2',
-        title: '白を基調としたミニマルなデザイン',
-        content: '視覚的なノイズを極限まで減らし、あなたの言葉と画像が最も美しく引き立つように余白とタイポグラフィを設計しています。\n\n写真の下に言葉を添えるシンプルなスタイルで、日常のメモ、旅の記録、大切なアイデアなど、白いキャンバスに描くように自由に書き出してください。',
-        image: defaultImg2,
-        date: formatDateString(new Date(Date.now() - 24 * 60 * 60 * 1000)) // 昨日
+  if (supabaseClient) {
+    try {
+      // Supabaseから全記事取得 (created_at降順)
+      const { data: dbArticles, error: artError } = await supabaseClient
+        .from('articles')
+        .select('*');
+
+      if (artError) throw artError;
+
+      // 各記事を復号して読み込む
+      const decryptedArticles = [];
+      if (dbArticles && dbArticles.length > 0) {
+        for (const art of dbArticles) {
+          try {
+            decryptedArticles.push({
+              id: art.id,
+              title: await decryptText(art.title),
+              content: await decryptText(art.content),
+              image: art.image ? await decryptText(art.image) : "",
+              date: art.date,
+              created_at: art.created_at // ソート用
+            });
+          } catch (decErr) {
+            console.error("Error decrypting article:", decErr);
+          }
+        }
+        // 作成日時降順でソート
+        state.articles = decryptedArticles.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      } else {
+        // 初回のみデフォルト記事をローカルから挿入
+        state.articles = getLocalDefaultArticles(defaultImg1, defaultImg2);
       }
-    ];
-    localStorage.setItem('tensguru_articles', JSON.stringify(defaultArticles));
-    state.articles = defaultArticles;
-  } else {
-    state.articles = JSON.parse(savedArticles);
+
+      // Supabaseから全カレンダー予定取得
+      const { data: dbEvents, error: evError } = await supabaseClient
+        .from('schedules')
+        .select('*');
+
+      if (evError) throw evError;
+
+      const decryptedSchedules = [];
+      if (dbEvents && dbEvents.length > 0) {
+        for (const ev of dbEvents) {
+          try {
+            decryptedSchedules.push({
+              id: ev.id,
+              date: ev.date,
+              time: ev.time,
+              title: await decryptText(ev.title)
+            });
+          } catch (decErr) {
+            console.error("Error decrypting schedule:", decErr);
+          }
+        }
+        state.schedules = decryptedSchedules;
+      } else {
+        // 初回のみデフォルト予定をセット
+        state.schedules = getLocalDefaultSchedules();
+      }
+
+      // バックアップとしてローカルストレージにもキャッシュ
+      localStorage.setItem('tensguru_articles', JSON.stringify(state.articles));
+      localStorage.setItem('tensguru_schedules', JSON.stringify(state.schedules));
+
+      renderArticles();
+      renderCalendar();
+      renderScheduleSlider();
+      return;
+    } catch (err) {
+      console.error("Failed to sync with Supabase, falling back to local storage:", err);
+      showToast("クラウド同期失敗。ローカルデータを使用します。", "error");
+    }
   }
 
-  // 予定データの初期化 (今日と明日のデモ予定を追加)
-  const savedSchedules = localStorage.getItem('tensguru_schedules');
-  if (!savedSchedules) {
-    const todayStr = formatDateString(new Date());
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = formatDateString(tomorrow);
+  // フォールバック: ローカルストレージ
+  state.articles = JSON.parse(localStorage.getItem('tensguru_articles')) || getLocalDefaultArticles(defaultImg1, defaultImg2);
+  state.schedules = JSON.parse(localStorage.getItem('tensguru_schedules')) || getLocalDefaultSchedules();
 
-    const defaultSchedules = [
-      {
-        id: 'sch-1',
-        date: todayStr,
-        time: '10:00',
-        title: 'TenSguruのセットアップ'
-      },
-      {
-        id: 'sch-2',
-        date: todayStr,
-        time: '14:00',
-        title: 'カレンダーの動作確認'
-      },
-      {
-        id: 'sch-3',
-        date: tomorrowStr,
-        time: '13:00',
-        title: '初めての記事を投稿する'
-      }
-    ];
-    localStorage.setItem('tensguru_schedules', JSON.stringify(defaultSchedules));
-    state.schedules = defaultSchedules;
-  } else {
-    state.schedules = JSON.parse(savedSchedules);
-  }
+  renderArticles();
+  renderCalendar();
+  renderScheduleSlider();
+}
+
+// デフォルト記事データの取得
+function getLocalDefaultArticles(defaultImg1, defaultImg2) {
+  return [
+    {
+      id: 'default-1',
+      title: 'TenSguru へようこそ',
+      content: 'TenSguruは、プライベートな記事掲載とカレンダーによるスケジュール管理をひとつにまとめた、パスワード保護付きの個人用Webサイトです。\n\n右上の「投稿する」ボタンから、画像と言葉（テキスト）を自由に掲載できます。左上のメニューボタンからカレンダーを開き、日々の予定を追加することも可能です。\n\nすべてのデータは外部のサーバーではなく、ブラウザのローカルストレージ（localStorage）に保存されるため、あなたのプライバシーは安全に守られます。',
+      image: defaultImg1,
+      date: formatDateString(new Date())
+    },
+    {
+      id: 'default-2',
+      title: '白を基調としたミニマルなデザイン',
+      content: '視覚的なノイズを極限まで減らし、あなたの言葉と画像が最も美しく引き立つように余白とタイポグラフィを設計しています。\n\n写真の下に言葉を添えるシンプルなスタイルで、日常のメモ、旅の記録、大切なアイデアなど、白いキャンバスに描くように自由に書き出してください。',
+      image: defaultImg2,
+      date: formatDateString(new Date(Date.now() - 24 * 60 * 60 * 1000))
+    }
+  ];
+}
+
+// デフォルト予定データの取得
+function getLocalDefaultSchedules() {
+  const todayStr = formatDateString(new Date());
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = formatDateString(tomorrow);
+  return [
+    {
+      id: 'sch-1',
+      date: todayStr,
+      time: '10:00',
+      title: 'TenSguruのセットアップ'
+    },
+    {
+      id: 'sch-2',
+      date: todayStr,
+      time: '14:00',
+      title: 'カレンダーの動作確認'
+    },
+    {
+      id: 'sch-3',
+      date: tomorrowStr,
+      time: '13:00',
+      title: '初めての記事を投稿する'
+    }
+  ];
 }
 
 // ログアウト処理
@@ -191,9 +340,8 @@ function resetImageSelection(event) {
   placeholder.classList.remove('hidden');
   removeBtn.classList.add('hidden');
 }
-
 // 記事保存の送信
-function submitPost() {
+async function submitPost() {
   const title = document.getElementById('post-title').value.trim();
   const content = document.getElementById('post-content').value.trim();
 
@@ -210,7 +358,32 @@ function submitPost() {
     date: formatDateString(new Date())
   };
 
-  state.articles.push(newArticle);
+  showToast("記事を保存中...", "success");
+
+  if (supabaseClient) {
+    try {
+      const encTitle = await encryptText(newArticle.title);
+      const encContent = await encryptText(newArticle.content);
+      const encImage = newArticle.image ? await encryptText(newArticle.image) : "";
+
+      const { error } = await supabaseClient
+        .from('articles')
+        .insert([{
+          id: newArticle.id,
+          title: encTitle,
+          content: encContent,
+          image: encImage,
+          date: newArticle.date
+        }]);
+
+      if (error) throw error;
+    } catch (err) {
+      console.error("Failed to save to Supabase:", err);
+      showToast("クラウド保存に失敗しました。ローカルにのみ保存します。", "error");
+    }
+  }
+
+  state.articles.unshift(newArticle); // 新しい順なので先頭に追加
   localStorage.setItem('tensguru_articles', JSON.stringify(state.articles));
 
   // フォーム初期化とモーダルクローズ
@@ -220,17 +393,34 @@ function submitPost() {
 
   // 表示の更新
   renderArticles();
+  showToast("記事を掲載しました！", "success");
 }
 
 // 記事の削除
-function deleteArticle(id) {
+async function deleteArticle(id) {
   if (!confirm('この記事を削除してもよろしいですか？')) return;
+
+  showToast("記事を削除中...", "success");
+
+  if (supabaseClient) {
+    try {
+      const { error } = await supabaseClient
+        .from('articles')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+    } catch (err) {
+      console.error("Failed to delete from Supabase:", err);
+      showToast("クラウドからの削除に失敗しました", "error");
+    }
+  }
 
   state.articles = state.articles.filter(article => article.id !== id);
   localStorage.setItem('tensguru_articles', JSON.stringify(state.articles));
   renderArticles();
+  showToast("記事を削除しました", "success");
 }
-
 // ========================================================
 // 3. カレンダー機能 (サイドバー内)
 // ========================================================
@@ -356,9 +546,8 @@ function renderDayEvents(dateStr) {
     container.appendChild(item);
   });
 }
-
 // 予定を追加
-function addEvent() {
+async function addEvent() {
   if (!state.selectedDate) return;
 
   const time = document.getElementById('event-time').value;
@@ -373,6 +562,27 @@ function addEvent() {
     title: title
   };
 
+  showToast("予定を保存中...", "success");
+
+  if (supabaseClient) {
+    try {
+      const encTitle = await encryptText(newEvent.title);
+      const { error } = await supabaseClient
+        .from('schedules')
+        .insert([{
+          id: newEvent.id,
+          date: newEvent.date,
+          time: newEvent.time,
+          title: encTitle
+        }]);
+
+      if (error) throw error;
+    } catch (err) {
+      console.error("Failed to save schedule to Supabase:", err);
+      showToast("クラウド保存に失敗しました。ローカルにのみ保存します。", "error");
+    }
+  }
+
   state.schedules.push(newEvent);
   localStorage.setItem('tensguru_schedules', JSON.stringify(state.schedules));
 
@@ -383,10 +593,29 @@ function addEvent() {
 
   // フォーム初期化
   document.getElementById('event-title').value = '';
+  showToast("予定を追加しました！", "success");
 }
 
 // 予定を削除
-function deleteEvent(id, dateStr) {
+async function deleteEvent(id, dateStr) {
+  if (!confirm('この予定を削除してもよろしいですか？')) return;
+
+  showToast("予定を削除中...", "success");
+
+  if (supabaseClient) {
+    try {
+      const { error } = await supabaseClient
+        .from('schedules')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+    } catch (err) {
+      console.error("Failed to delete schedule from Supabase:", err);
+      showToast("クラウドからの削除に失敗しました", "error");
+    }
+  }
+
   state.schedules = state.schedules.filter(event => event.id !== id);
   localStorage.setItem('tensguru_schedules', JSON.stringify(state.schedules));
 
@@ -394,8 +623,8 @@ function deleteEvent(id, dateStr) {
   renderDayEvents(dateStr);
   renderCalendar();
   renderScheduleSlider();
+  showToast("予定を削除しました", "success");
 }
-
 // 予定追加パネルを閉じる
 function closeEventEditor() {
   document.getElementById('event-editor').classList.add('hidden');
