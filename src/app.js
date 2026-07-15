@@ -304,38 +304,42 @@ function renderArticles() {
 // 新しい記事の投稿処理
 let selectedImageBase64 = '';
 
-// 画像圧縮用ヘルパー関数 (Canvasを用いたリサイズ・JPEG圧縮)
+// 画像圧縮用ヘルパー関数 (Blob URLを用いたメモリ最適化版)
 function compressImage(file, maxWidth = 1200, quality = 0.8) {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (e) => {
-      const img = new Image();
-      img.src = e.target.result;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
+    // 巨大なBase64を介さず、メモリ効率の良いBlob URLを作成してImageにセット
+    const blobUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.src = blobUrl;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
 
-        // アスペクト比を維持しつつ最大横幅に縮小
-        if (width > maxWidth) {
-          height = Math.round((height * maxWidth) / width);
-          width = maxWidth;
-        }
+      // アスペクト比を維持しつつ最大横幅に縮小
+      if (width > maxWidth) {
+        height = Math.round((height * maxWidth) / width);
+        width = maxWidth;
+      }
 
-        canvas.width = width;
-        canvas.height = height;
+      canvas.width = width;
+      canvas.height = height;
 
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
 
-        // 指定の画質でJPEG圧縮したBase64データを出力
-        const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
-        resolve(compressedBase64);
-      };
-      img.onerror = (err) => reject(err);
+      // 指定の画質でJPEG圧縮したBase64データを出力
+      const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+      
+      // 使用が終わった一時メモリ（Blob URL）を即座に解放
+      URL.revokeObjectURL(blobUrl);
+      resolve(compressedBase64);
     };
-    reader.onerror = (err) => reject(err);
+    img.onerror = (err) => {
+      // エラー発生時も確実にメモリを解放
+      URL.revokeObjectURL(blobUrl);
+      reject(err);
+    };
   });
 }
 
