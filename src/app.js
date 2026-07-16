@@ -176,6 +176,7 @@ async function initData() {
       renderArticles();
       renderCalendar();
       renderScheduleSlider();
+      setupSync();
       return;
     } catch (err) {
       console.error("Failed to sync with Supabase, falling back to local storage:", err);
@@ -192,6 +193,7 @@ async function initData() {
   renderArticles();
   renderCalendar();
   renderScheduleSlider();
+  setupSync();
 }
 
 // デフォルト記事データの取得
@@ -279,6 +281,15 @@ function renderArticles() {
       </div>
     ` : '';
 
+    const { text, reactions } = parseArticleContent(article.content);
+
+    const reactionBadgesHtml = Object.entries(reactions).map(([emoji, count]) => `
+      <button class="reaction-badge" onclick="addReaction('${article.id}', '${emoji}')" aria-label="リアクション ${emoji}">
+        <span>${emoji}</span>
+        <span>${count > 1 ? count : ''}</span>
+      </button>
+    `).join('');
+
     card.innerHTML = `
       ${imageHtml}
       <div class="article-content">
@@ -286,7 +297,16 @@ function renderArticles() {
           <span>${formatJPDate(article.date)}</span>
         </div>
         <h2 class="article-title">${escapeHTML(article.title)}</h2>
-        <p class="article-text">${escapeHTML(article.content)}</p>
+        <p class="article-text">${escapeHTML(text)}</p>
+        
+        <div class="article-reactions-area">
+          ${reactionBadgesHtml}
+          <div class="emoji-picker-container">
+            <button class="reaction-add-btn" onclick="toggleEmojiPicker('${article.id}', event)" aria-label="リアクションを追加">＋</button>
+            <div id="emoji-picker-${article.id}" class="emoji-picker-popover hidden" onclick="event.stopPropagation()"></div>
+          </div>
+        </div>
+
         <button class="icon-btn delete-btn" onclick="deleteArticle('${article.id}')" aria-label="記事を削除">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="3 6 5 6 21 6"></polyline>
@@ -858,4 +878,193 @@ function showToast(message, type = 'error') {
     toast.classList.remove('show');
     setTimeout(() => toast.remove(), 200);
   }, 3000);
+}
+
+// ========================================================
+// 8. リアクション機能
+// ========================================================
+
+const EMOJI_LIST = [
+  "👍", "👎", "❤️", "🔥", "🎉", 
+  "✨", "👏", "😂", "😍", "🤔", 
+  "😢", "😎", "😮", "😡", "🙌", 
+  "💡", "💯", "🚀", "👀", "💩", 
+  "🤝", "🎂", "🌟", "🌈", "🍀"
+];
+
+// 本文からリアクションデータをパースする
+function parseArticleContent(rawContent) {
+  if (!rawContent) return { text: "", reactions: {} };
+  const reactionMatch = rawContent.match(/\n\n\[reactions:(.*)\]$/);
+  if (reactionMatch) {
+    const text = rawContent.substring(0, reactionMatch.index);
+    try {
+      const reactions = JSON.parse(reactionMatch[1]);
+      return { text, reactions };
+    } catch (e) {
+      console.error("Failed to parse reactions:", e);
+      return { text: rawContent, reactions: {} };
+    }
+  }
+  return { text: rawContent, reactions: {} };
+}
+
+// 絵文字パレットの表示切り替え
+function toggleEmojiPicker(articleId, event) {
+  if (event) event.stopPropagation();
+  
+  const allPickers = document.querySelectorAll('.emoji-picker-popover');
+  allPickers.forEach(picker => {
+    if (picker.id !== `emoji-picker-${articleId}`) {
+      picker.classList.add('hidden');
+    }
+  });
+  
+  const picker = document.getElementById(`emoji-picker-${articleId}`);
+  if (!picker) return;
+  
+  const isHidden = picker.classList.contains('hidden');
+  if (isHidden) {
+    picker.innerHTML = EMOJI_LIST.map(emoji => `
+      <button class="emoji-btn" onclick="selectEmoji('${articleId}', '${emoji}')">${emoji}</button>
+    `).join('');
+    picker.classList.remove('hidden');
+  } else {
+    picker.classList.add('hidden');
+  }
+}
+
+// 絵文字の選択処理
+function selectEmoji(articleId, emoji) {
+  addReaction(articleId, emoji);
+  const picker = document.getElementById(`emoji-picker-${articleId}`);
+  if (picker) picker.classList.add('hidden');
+}
+
+// 画面外クリック時に絵文字パレットを閉じる
+document.addEventListener('click', () => {
+  const allPickers = document.querySelectorAll('.emoji-picker-popover');
+  allPickers.forEach(picker => {
+    picker.classList.add('hidden');
+  });
+});
+
+// 楽観的更新の整合性を保つためのタイムスタンプ
+window.lastReactionTime = 0;
+
+// リアクションを追加
+async function addReaction(articleId, emoji) {
+  const articleIndex = state.articles.findIndex(a => a.id === articleId);
+  if (articleIndex === -1) return;
+
+  const article = state.articles[articleIndex];
+  const { text, reactions } = parseArticleContent(article.content);
+
+  // カウントを増やす
+  reactions[emoji] = (reactions[emoji] || 0) + 1;
+
+  // 新しいコンテンツを作成
+  const newContent = `${text}\n\n[reactions:${JSON.stringify(reactions)}]`;
+
+  // 楽観的更新の排他制御用タイムスタンプを更新
+  window.lastReactionTime = Date.now();
+
+  // ローカル状態とストレージを即座に更新 (楽観的更新)
+  state.articles[articleIndex].content = newContent;
+  localStorage.setItem('tensguru_articles', JSON.stringify(state.articles));
+  renderArticles();
+
+  if (supabaseClient) {
+    try {
+      const encTitle = await encryptText(article.title);
+      const encContent = await encryptText(newContent);
+      const encImage = article.image ? await encryptText(article.image) : "";
+
+      // UPDATE権限がない(RLS制限)ため、DELETEしてからINSERTする方式で上書き更新する
+      // まず既存の記事を削除
+      const { error: delError } = await supabaseClient
+        .from('articles')
+        .delete()
+        .eq('id', articleId);
+
+      if (delError) throw delError;
+
+      // 即座に新しい内容で挿入 (元のID, 日付, 作成日時を維持)
+      const { error: insError } = await supabaseClient
+        .from('articles')
+        .insert([{
+          id: article.id,
+          title: encTitle,
+          content: encContent,
+          image: encImage,
+          date: article.date,
+          created_at: article.created_at
+        }]);
+
+      if (insError) throw insError;
+    } catch (err) {
+      console.error("Failed to update reaction on Supabase:", err);
+      showToast("クラウド同期に失敗しました", "error");
+    }
+  }
+}
+
+// 記事データの同期 (他の人の書き込みを反映)
+async function syncArticles() {
+  if (!supabaseClient) return;
+  // 自分がリアクションを送信した直後の数秒間は、DBとの過渡期(一瞬消える/戻る現象)を防ぐために同期をスキップ
+  if (Date.now() - window.lastReactionTime < 4000) {
+    return;
+  }
+  try {
+    const { data: dbArticles, error } = await supabaseClient
+      .from('articles')
+      .select('*');
+
+    if (error) throw error;
+
+    const decryptedArticles = [];
+    if (dbArticles && dbArticles.length > 0) {
+      for (const art of dbArticles) {
+        try {
+          decryptedArticles.push({
+            id: art.id,
+            title: await decryptText(art.title),
+            content: await decryptText(art.content),
+            image: art.image ? await decryptText(art.image) : "",
+            date: art.date,
+            created_at: art.created_at
+          });
+        } catch (decErr) {
+          console.error("Error decrypting article during sync:", decErr);
+        }
+      }
+      
+      state.articles = decryptedArticles.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      localStorage.setItem('tensguru_articles', JSON.stringify(state.articles));
+      renderArticles();
+    }
+  } catch (err) {
+    console.error("Sync failed:", err);
+  }
+}
+
+// 定期同期とリアルタイム同期の設定
+function setupSync() {
+  if (!supabaseClient) return;
+
+  // 15秒ごとのポーリング
+  setInterval(syncArticles, 15000);
+
+  // Supabase Realtime でのリアルタイム同期
+  try {
+    supabaseClient
+      .channel('public:articles')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'articles' }, () => {
+        syncArticles();
+      })
+      .subscribe();
+  } catch (e) {
+    console.error("Failed to subscribe to realtime changes:", e);
+  }
 }
