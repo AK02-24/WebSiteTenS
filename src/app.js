@@ -276,7 +276,7 @@ function renderArticles() {
 
     // カードのHTML構造 (上が画像、下がテキスト)
     const imageHtml = article.image ? `
-      <div class="article-image-container">
+      <div class="article-image-container" onclick="openDetailModal('${article.id}')">
         <img src="${article.image}" class="article-image" alt="${escapeHTML(article.title)}" loading="lazy">
       </div>
     ` : '';
@@ -284,7 +284,7 @@ function renderArticles() {
     const { text, reactions } = parseArticleContent(article.content);
 
     const reactionBadgesHtml = Object.entries(reactions).map(([emoji, count]) => `
-      <button class="reaction-badge" onclick="addReaction('${article.id}', '${emoji}')" aria-label="リアクション ${emoji}">
+      <button class="reaction-badge" onclick="event.stopPropagation(); addReaction('${article.id}', '${emoji}')" aria-label="リアクション ${emoji}">
         <span>${emoji}</span>
         <span>${count > 1 ? count : ''}</span>
       </button>
@@ -293,11 +293,13 @@ function renderArticles() {
     card.innerHTML = `
       ${imageHtml}
       <div class="article-content">
-        <div class="article-meta">
-          <span>${formatJPDate(article.date)}</span>
+        <div class="article-clickable-body" onclick="openDetailModal('${article.id}')">
+          <div class="article-meta">
+            <span>${formatJPDate(article.date)}</span>
+          </div>
+          <h2 class="article-title">${escapeHTML(article.title)}</h2>
+          <p class="article-text">${escapeHTML(text)}</p>
         </div>
-        <h2 class="article-title">${escapeHTML(article.title)}</h2>
-        <p class="article-text">${escapeHTML(text)}</p>
         
         <div class="article-reactions-area">
           ${reactionBadgesHtml}
@@ -307,7 +309,7 @@ function renderArticles() {
           </div>
         </div>
 
-        <button class="icon-btn delete-btn" onclick="deleteArticle('${article.id}')" aria-label="記事を削除">
+        <button class="icon-btn delete-btn" onclick="event.stopPropagation(); deleteArticle('${article.id}')" aria-label="記事を削除">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="3 6 5 6 21 6"></polyline>
             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -828,6 +830,96 @@ function closePostModal() {
   resetImageSelection();
 }
 
+// 記事詳細表示モーダルを開く
+function openDetailModal(articleId) {
+  const article = state.articles.find(a => a.id === articleId);
+  if (!article) return;
+
+  const { text, reactions } = parseArticleContent(article.content);
+
+  const modal = document.getElementById('detail-modal');
+  const imgContainer = document.getElementById('detail-image-container');
+  const imgEl = document.getElementById('detail-image');
+  const dateEl = document.getElementById('detail-date');
+  const titleEl = document.getElementById('detail-title');
+  const textEl = document.getElementById('detail-text');
+  const reactionsEl = document.getElementById('detail-reactions-area');
+
+  // 画像の設定
+  if (article.image) {
+    imgEl.src = article.image;
+    imgEl.alt = article.title;
+    imgEl.onclick = () => openLightbox(article.image);
+    imgContainer.classList.remove('hidden');
+  } else {
+    imgEl.src = '';
+    imgEl.alt = '';
+    imgEl.onclick = null;
+    imgContainer.classList.add('hidden');
+  }
+
+  // テキスト情報の設定
+  dateEl.textContent = formatJPDate(article.date);
+  titleEl.textContent = article.title;
+  
+  // 本文のHTMLエスケープと改行反映
+  textEl.innerHTML = escapeHTML(text).replace(/\n/g, '<br>');
+
+  // リアクションの設定 (詳細モーダルでは isDetail=true として絵文字ピッカーを生成)
+  reactionsEl.innerHTML = '';
+  const reactionBadgesHtml = Object.entries(reactions).map(([emoji, count]) => `
+    <button class="reaction-badge" onclick="event.stopPropagation(); addReactionFromDetail('${article.id}', '${emoji}')" aria-label="リアクション ${emoji}">
+      <span>${emoji}</span>
+      <span>${count > 1 ? count : ''}</span>
+    </button>
+  `).join('');
+
+  reactionsEl.innerHTML = `
+    ${reactionBadgesHtml}
+    <div class="emoji-picker-container">
+      <button class="reaction-add-btn" onclick="toggleEmojiPicker('${article.id}', event, true)" aria-label="リアクションを追加">＋</button>
+      <div id="emoji-picker-detail-${article.id}" class="emoji-picker-popover hidden" onclick="event.stopPropagation()"></div>
+    </div>
+  `;
+
+  modal.classList.remove('hidden');
+}
+
+// 記事詳細モーダルを閉じる
+function closeDetailModal() {
+  const modal = document.getElementById('detail-modal');
+  modal.classList.add('hidden');
+}
+
+// バックドロップクリック時に詳細モーダルを閉じる
+function closeDetailModalOnBackdrop(event) {
+  if (event.target === document.getElementById('detail-modal')) {
+    closeDetailModal();
+  }
+}
+
+// 詳細画面からのリアクション追加
+async function addReactionFromDetail(articleId, emoji) {
+  await addReaction(articleId, emoji);
+  // リアクション追加後、詳細モーダルの表示も更新する
+  openDetailModal(articleId);
+}
+
+// 画像拡大ライトボックスを開く
+function openLightbox(imageSrc) {
+  const lightbox = document.getElementById('image-lightbox');
+  const img = document.getElementById('lightbox-img');
+  img.src = imageSrc;
+  lightbox.classList.remove('hidden');
+}
+
+// 画像拡大ライトボックスを閉じる
+function closeLightbox() {
+  const lightbox = document.getElementById('image-lightbox');
+  lightbox.classList.add('hidden');
+  document.getElementById('lightbox-img').src = '';
+}
+
 // 日付ユーティリティ (Dateオブジェクト -> YYYY-MM-DD 文字列)
 function formatDateString(date) {
   const y = date.getFullYear();
@@ -910,23 +1002,25 @@ function parseArticleContent(rawContent) {
 }
 
 // 絵文字パレットの表示切り替え
-function toggleEmojiPicker(articleId, event) {
+function toggleEmojiPicker(articleId, event, isDetail = false) {
   if (event) event.stopPropagation();
+  
+  const targetId = isDetail ? `emoji-picker-detail-${articleId}` : `emoji-picker-${articleId}`;
   
   const allPickers = document.querySelectorAll('.emoji-picker-popover');
   allPickers.forEach(picker => {
-    if (picker.id !== `emoji-picker-${articleId}`) {
+    if (picker.id !== targetId) {
       picker.classList.add('hidden');
     }
   });
   
-  const picker = document.getElementById(`emoji-picker-${articleId}`);
+  const picker = document.getElementById(targetId);
   if (!picker) return;
   
   const isHidden = picker.classList.contains('hidden');
   if (isHidden) {
     picker.innerHTML = EMOJI_LIST.map(emoji => `
-      <button class="emoji-btn" onclick="selectEmoji('${articleId}', '${emoji}')">${emoji}</button>
+      <button class="emoji-btn" onclick="selectEmoji('${articleId}', '${emoji}', ${isDetail})">${emoji}</button>
     `).join('');
     picker.classList.remove('hidden');
   } else {
@@ -935,9 +1029,14 @@ function toggleEmojiPicker(articleId, event) {
 }
 
 // 絵文字の選択処理
-function selectEmoji(articleId, emoji) {
-  addReaction(articleId, emoji);
-  const picker = document.getElementById(`emoji-picker-${articleId}`);
+function selectEmoji(articleId, emoji, isDetail = false) {
+  if (isDetail) {
+    addReactionFromDetail(articleId, emoji);
+  } else {
+    addReaction(articleId, emoji);
+  }
+  const targetId = isDetail ? `emoji-picker-detail-${articleId}` : `emoji-picker-${articleId}`;
+  const picker = document.getElementById(targetId);
   if (picker) picker.classList.add('hidden');
 }
 

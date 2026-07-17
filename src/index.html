@@ -202,6 +202,50 @@
       </div>
     </div>
 
+    <!-- ========================================================
+         5. 記事詳細表示モーダル (ポップアップ)
+         ======================================================== -->
+    <div id="detail-modal" class="modal-backdrop hidden" onclick="closeDetailModalOnBackdrop(event)">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2 class="modal-title">記事の詳細</h2>
+          <button class="icon-btn" onclick="closeDetailModal()" aria-label="閉じる">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body-scroll">
+          <div id="detail-image-container" class="detail-image-wrapper hidden">
+            <img id="detail-image" class="detail-image" alt="記事画像">
+          </div>
+          <div class="detail-content-area">
+            <div class="detail-meta">
+              <span id="detail-date"></span>
+            </div>
+            <h2 id="detail-title" class="detail-title-text"></h2>
+            <div id="detail-text" class="detail-body-text"></div>
+            
+            <div id="detail-reactions-area" class="article-reactions-area">
+              <!-- 詳細画面用リアクションエリア -->
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions" style="padding: 16px 24px; margin-top: 0; border-top: 1px solid var(--border-light);">
+          <button type="button" class="btn btn-light" onclick="closeDetailModal()">閉じる</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================
+         6. 全画面画像拡大ライトボックス
+         ======================================================== -->
+    <div id="image-lightbox" class="lightbox-backdrop hidden" onclick="closeLightbox()">
+      <span class="lightbox-close" onclick="closeLightbox()">&times;</span>
+      <img id="lightbox-img" class="lightbox-content" alt="拡大画像" onclick="event.stopPropagation()">
+    </div>
+
   </div>
 
   <script src="app.js"></script>
